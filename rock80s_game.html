@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Rock 80s Game - Para o Meu Pai</title>
+  <style>
+    body {
+      background-color: black;
+      color: lime;
+      font-family: monospace;
+      text-align: center;
+      margin: 0;
+      padding: 0;
+    }
+    canvas {
+      background: #000;
+      display: block;
+      margin: 20px auto;
+      image-rendering: pixelated;
+    }
+    .controls {
+      display: flex;
+      justify-content: center;
+      gap: 40px;
+      margin-top: 10px;
+    }
+    .btn {
+      font-size: 24px;
+      padding: 10px 20px;
+      background: #111;
+      color: lime;
+      border: 2px solid lime;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🎸 Rock dos Anos 80 🎸</h1>
+  <p>Feliz Dia dos Pais - Sempre Unidos pela Música</p>
+  <p id="scoreDisplay">Pontos: 0</p>
+  <canvas id="gameCanvas" width="320" height="240"></canvas>
+  <div class="controls">
+    <button class="btn" onclick="moveLeft()">⬅️</button>
+    <button class="btn" onclick="moveRight()">➡️</button>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    const scoreDisplay = document.getElementById("scoreDisplay");
+
+    const player = { x: 150, y: 200, width: 20, height: 20, speed: 4 };
+    const allBands = [
+      { name: "The Smiths", song: "🎵 This Charming Man (8-bit) 🎵" },
+      { name: "The Cure", song: "🎵 Boys Don't Cry (8-bit) 🎵" },
+      { name: "Legião Urbana", song: "🎵 Índios (8-bit) 🎵" },
+      { name: "Rainbow", song: "🎵 Hail to the King (8-bit) 🎵" },
+      { name: "Slayer", song: "🎵 Raining Blood (8-bit) 🎵" },
+      { name: "Metallica", song: "🎵 One (8-bit) 🎵" },
+      { name: "Joy Division", song: "🎵 Love Will Tear Us Apart (8-bit) 🎵" },
+      { name: "David Bowie", song: "🎵 Ashes to Ashes (8-bit) 🎵" },
+      { name: "Echo & the Bunnymen", song: "🎵 Bring on the Dancing Horses (8-bit) 🎵" }
+    ];
+
+    let bandQueue = [];
+    let activeBand = null;
+    let collected = false;
+    let showIntro = true;
+    let score = 0;
+
+    const movingObstacles = [];
+    for (let i = 0; i < 6; i++) {
+      movingObstacles.push({
+        x: Math.random() * 260 + 20,
+        y: Math.random() * -400,
+        width: 20,
+        height: 20,
+        speed: 1 + Math.random() * 1.5
+      });
+    }
+
+    function shuffleBands() {
+      const shuffled = [...allBands];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+      bandQueue = shuffled.map(b => ({ ...b, x: Math.random() * 200 + 40, y: -50 }));
+    }
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && showIntro) {
+        showIntro = false;
+        shuffleBands();
+        spawnNextBand();
+        updateGame();
+      }
+      if (!showIntro) {
+        if (e.key === "ArrowLeft") player.x -= player.speed;
+        if (e.key === "ArrowRight") player.x += player.speed;
+      }
+    });
+
+    function moveLeft() {
+      if (!showIntro) player.x -= player.speed;
+    }
+
+    function moveRight() {
+      if (!showIntro) player.x += player.speed;
+    }
+
+    function drawPlayer() {
+      ctx.fillStyle = "lime";
+      ctx.beginPath();
+      ctx.moveTo(player.x + 10, player.y);
+      ctx.lineTo(player.x, player.y + 20);
+      ctx.lineTo(player.x + 20, player.y + 20);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    function drawBandIcon(band) {
+      ctx.fillStyle = "cyan";
+      ctx.font = "16px monospace";
+      ctx.fillText("🎵", band.x, band.y);
+    }
+
+    function drawObstacles() {
+      ctx.fillStyle = "red";
+      movingObstacles.forEach(o => {
+        o.y += o.speed;
+        if (o.y > canvas.height) {
+          o.y = Math.random() * -200;
+          o.x = Math.random() * 280;
+        }
+        ctx.fillRect(o.x, o.y, o.width, o.height);
+      });
+    }
+
+    function spawnNextBand() {
+      if (bandQueue.length === 0) shuffleBands();
+      activeBand = bandQueue.shift();
+      activeBand.y = -50;
+      collected = false;
+    }
+
+    function showIntroScreen() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "lime";
+      ctx.font = "12px monospace";
+      ctx.fillText("🕹️ Rock dos Anos 80 🕹️", 70, 100);
+      ctx.fillText("Coletando clássicos com meu pai!", 40, 120);
+      ctx.fillText("Pressione ENTER para começar", 50, 150);
+    }
+
+    function updateGame() {
+      if (showIntro) {
+        showIntroScreen();
+        return;
+      }
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawPlayer();
+      drawObstacles();
+
+      if (activeBand && !collected) {
+        activeBand.y += 1;
+        drawBandIcon(activeBand);
+
+        for (let obs of movingObstacles) {
+          if (
+            player.x < obs.x + obs.width &&
+            player.x + player.width > obs.x &&
+            player.y < obs.y + obs.height &&
+            player.y + player.height > obs.y
+          ) {
+            ctx.fillStyle = "red";
+            ctx.fillText("💥 Bateu! Tente novamente!", 60, 120);
+            return;
+          }
+        }
+
+        if (
+          activeBand.y + 10 >= player.y &&
+          activeBand.y <= player.y + player.height &&
+          activeBand.x >= player.x - 20 &&
+          activeBand.x <= player.x + player.width + 20
+        ) {
+          collected = true;
+          score += 1;
+          scoreDisplay.textContent = "Pontos: " + score;
+
+          ctx.fillStyle = "yellow";
+          ctx.fillText(`🎧 ${activeBand.song}`, 30, 130);
+
+          setTimeout(() => {
+            spawnNextBand();
+          }, 10000); // 10 segundos
+        }
+      }
+
+      requestAnimationFrame(updateGame);
+    }
+
+    ctx.font = "12px monospace";
+    showIntroScreen();
+  </script>
+</body>
+</html>
