@@ -31,6 +31,11 @@
       color: lime;
       border: 2px solid lime;
       border-radius: 5px;
+      touch-action: manipulation;
+    }
+    #restartBtn {
+      display: none;
+      margin-top: 20px;
     }
   </style>
 </head>
@@ -40,14 +45,16 @@
   <p id="scoreDisplay">Pontos: 0</p>
   <canvas id="gameCanvas" width="320" height="240"></canvas>
   <div class="controls">
-    <button class="btn" onclick="moveLeft()">⬅️</button>
-    <button class="btn" onclick="moveRight()">➡️</button>
+    <button class="btn" id="leftBtn">⬅️</button>
+    <button class="btn" id="rightBtn">➡️</button>
   </div>
+  <button class="btn" id="restartBtn" onclick="restartGame()">🔁 Reiniciar</button>
 
   <script>
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
     const scoreDisplay = document.getElementById("scoreDisplay");
+    const restartBtn = document.getElementById("restartBtn");
 
     const player = { x: 150, y: 200, width: 20, height: 20, speed: 4 };
     const allBands = [
@@ -66,17 +73,23 @@
     let activeBand = null;
     let collected = false;
     let showIntro = true;
+    let gameOver = false;
     let score = 0;
 
+    let moveInterval = null;
     const movingObstacles = [];
-    for (let i = 0; i < 6; i++) {
-      movingObstacles.push({
-        x: Math.random() * 260 + 20,
-        y: Math.random() * -400,
-        width: 20,
-        height: 20,
-        speed: 1 + Math.random() * 1.5
-      });
+
+    function setupObstacles() {
+      movingObstacles.length = 0;
+      for (let i = 0; i < 6; i++) {
+        movingObstacles.push({
+          x: Math.random() * 260 + 20,
+          y: Math.random() * -400,
+          width: 20,
+          height: 20,
+          speed: 1 + Math.random() * 1.5
+        });
+      }
     }
 
     function shuffleBands() {
@@ -88,44 +101,64 @@
       bandQueue = shuffled.map(b => ({ ...b, x: Math.random() * 200 + 40, y: -50 }));
     }
 
-    // Inicia o jogo com ENTER
+    function startGame() {
+      showIntro = false;
+      gameOver = false;
+      score = 0;
+      player.x = 150;
+      scoreDisplay.textContent = "Pontos: 0";
+      restartBtn.style.display = "none";
+      shuffleBands();
+      setupObstacles();
+      spawnNextBand();
+      updateGame();
+    }
+
+    function restartGame() {
+      startGame();
+    }
+
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && showIntro) {
-        startGame();
-      }
+      if (e.key === "Enter" && showIntro) startGame();
       if (!showIntro) {
         if (e.key === "ArrowLeft") player.x -= player.speed;
         if (e.key === "ArrowRight") player.x += player.speed;
       }
     });
 
-    // Também inicia o jogo com clique ou toque
     document.body.addEventListener("click", () => {
-      if (showIntro) {
-        startGame();
-      }
+      if (showIntro) startGame();
     });
 
     document.body.addEventListener("touchstart", () => {
-      if (showIntro) {
-        startGame();
-      }
+      if (showIntro) startGame();
     });
 
-    function startGame() {
-      showIntro = false;
-      shuffleBands();
-      spawnNextBand();
-      updateGame();
+    // Botões com movimento contínuo
+    function holdMove(direction) {
+      if (moveInterval) clearInterval(moveInterval);
+      moveInterval = setInterval(() => {
+        if (!showIntro && !gameOver) {
+          player.x += direction * player.speed;
+        }
+      }, 30);
     }
 
-    function moveLeft() {
-      if (!showIntro) player.x -= player.speed;
+    function stopMove() {
+      if (moveInterval) clearInterval(moveInterval);
     }
 
-    function moveRight() {
-      if (!showIntro) player.x += player.speed;
-    }
+    const leftBtn = document.getElementById("leftBtn");
+    const rightBtn = document.getElementById("rightBtn");
+
+    leftBtn.addEventListener("mousedown", () => holdMove(-1));
+    rightBtn.addEventListener("mousedown", () => holdMove(1));
+    leftBtn.addEventListener("mouseup", stopMove);
+    rightBtn.addEventListener("mouseup", stopMove);
+    leftBtn.addEventListener("touchstart", () => holdMove(-1));
+    rightBtn.addEventListener("touchstart", () => holdMove(1));
+    leftBtn.addEventListener("touchend", stopMove);
+    rightBtn.addEventListener("touchend", stopMove);
 
     function drawPlayer() {
       ctx.fillStyle = "lime";
@@ -194,6 +227,8 @@
           ) {
             ctx.fillStyle = "red";
             ctx.fillText("💥 Bateu! Tente novamente!", 60, 120);
+            gameOver = true;
+            restartBtn.style.display = "inline-block";
             return;
           }
         }
@@ -213,11 +248,13 @@
 
           setTimeout(() => {
             spawnNextBand();
-          }, 10000); // 10 segundos
+          }, 10000);
         }
       }
 
-      requestAnimationFrame(updateGame);
+      if (!gameOver) {
+        requestAnimationFrame(updateGame);
+      }
     }
 
     ctx.font = "12px monospace";
