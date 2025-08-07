@@ -88,18 +88,36 @@
       bandQueue = shuffled.map(b => ({ ...b, x: Math.random() * 200 + 40, y: -50 }));
     }
 
+    // Inicia o jogo com ENTER
     document.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && showIntro) {
-        showIntro = false;
-        shuffleBands();
-        spawnNextBand();
-        updateGame();
+        startGame();
       }
       if (!showIntro) {
         if (e.key === "ArrowLeft") player.x -= player.speed;
         if (e.key === "ArrowRight") player.x += player.speed;
       }
     });
+
+    // Também inicia o jogo com clique ou toque
+    document.body.addEventListener("click", () => {
+      if (showIntro) {
+        startGame();
+      }
+    });
+
+    document.body.addEventListener("touchstart", () => {
+      if (showIntro) {
+        startGame();
+      }
+    });
+
+    function startGame() {
+      showIntro = false;
+      shuffleBands();
+      spawnNextBand();
+      updateGame();
+    }
 
     function moveLeft() {
       if (!showIntro) player.x -= player.speed;
@@ -150,7 +168,7 @@
       ctx.font = "12px monospace";
       ctx.fillText("🕹️ Rock dos Anos 80 🕹️", 70, 100);
       ctx.fillText("Coletando clássicos com meu pai!", 40, 120);
-      ctx.fillText("Pressione ENTER para começar", 50, 150);
+      ctx.fillText("Toque ou pressione ENTER para começar", 20, 150);
     }
 
     function updateGame() {
