@@ -443,6 +443,29 @@
     }
     function restartGame(){ startGame(); }
 
+// --- Controles ---
+    document.addEventListener("keydown", (e)=>{
+      // ... código existente ...
+    }, { passive:false });
+
+    document.body.addEventListener("click", ()=>{
+      // ... código existente ...
+    });
+
+    document.body.addEventListener("touchstart", (e)=>{
+      // ... código existente ...
+    }, { passive:false });
+
+    document.getElementById("leftBtn").addEventListener("touchstart", () => {
+      player.x -= player.speed;
+      player.x = Math.max(minPlayerX(), Math.min(player.x, maxPlayerX()));
+    });
+
+    document.getElementById("rightBtn").addEventListener("touchstart", () => {
+      player.x += player.speed;
+      player.x = Math.max(minPlayerX(), Math.min(player.x, maxPlayerX()));
+    });
+
     // Init
     resizeCanvas();
     g.font = "12px monospace";
