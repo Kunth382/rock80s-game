@@ -11,18 +11,21 @@
       text-align: center;
       margin: 0;
       padding: 0;
+      overflow: hidden;
     }
     canvas {
       background: #000;
       display: block;
       margin: 20px auto;
       image-rendering: pixelated;
+      image-rendering: crisp-edges;
     }
     .controls {
       display: flex;
       justify-content: center;
       gap: 40px;
       margin-top: 10px;
+      flex-wrap: wrap;
     }
     .btn {
       font-size: 24px;
@@ -43,7 +46,7 @@
   <h1>🎸 Rock dos Anos 80 🎸</h1>
   <p>Feliz Dia dos Pais - Sempre Unidos pela Música</p>
   <p id="scoreDisplay">Pontos: 0</p>
-  <canvas id="gameCanvas" width="320" height="240"></canvas>
+  <canvas id="gameCanvas"></canvas>
   <div class="controls">
     <button class="btn" id="leftBtn">⬅️</button>
     <button class="btn" id="rightBtn">➡️</button>
@@ -51,213 +54,398 @@
   <button class="btn" id="restartBtn" onclick="restartGame()">🔁 Reiniciar</button>
 
   <script>
+    // --- Canvas visível + virtual ---
     const canvas = document.getElementById("gameCanvas");
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", { alpha: false });
     const scoreDisplay = document.getElementById("scoreDisplay");
     const restartBtn = document.getElementById("restartBtn");
 
-    const player = { x: 150, y: 200, width: 20, height: 20, speed: 4 };
+    const VW = 320, VH = 240;
+    const vCanvas = document.createElement('canvas');
+    vCanvas.width = VW; vCanvas.height = VH;
+    const g = vCanvas.getContext('2d', { alpha: false });
+    g.imageSmoothingEnabled = false;
+    ctx.imageSmoothingEnabled = false;
+
+    const WALL_W = 8;
+    function minPlayerX(){ return WALL_W; }
+    function maxPlayerX(){ return VW - WALL_W - player.width; }
+
+    function resizeCanvas() {
+      const dpi = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+      const TARGET_WVW = 0.95, TARGET_HVH = 0.75;
+      const maxW = Math.floor(window.innerWidth * TARGET_WVW);
+      const maxH = Math.floor(window.innerHeight * TARGET_HVH);
+      const scale = Math.max(1, Math.floor(Math.min(maxW / VW, maxH / VH)));
+      const cssW = VW * scale, cssH = VH * scale;
+      canvas.style.width = cssW + 'px';
+      canvas.style.height = cssH + 'px';
+      canvas.width  = cssW * dpi;
+      canvas.height = cssH * dpi;
+      ctx.imageSmoothingEnabled = false;
+      ctx.fillStyle = 'black';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    window.addEventListener('resize', resizeCanvas);
+    window.addEventListener('orientationchange', resizeCanvas);
+
+    // Helpers
+    const r = (x)=> (x|0);
+    function clearVirtual(){ g.fillStyle = "black"; g.fillRect(0, 0, VW, VH); }
+    function drawBlit(){ ctx.drawImage(vCanvas, 0, 0, canvas.width, canvas.height); }
+
+    // --- Paleta ---
+    const COLORS = {
+      bg: "#000000",
+      wall: "#000000",
+      ship: "#00ff00",
+      note: "#00e5ff",
+      power: "#ffffff",
+      red: "#ff2d2d",
+      ring: "#00ffff",
+      cometBright: "#ffbd3b",
+      cometDim: "#ff9f00"
+    };
+
+    // --- Draw Sprite ---
+    function drawSprite(x, y, grid, map) {
+      for (let j = 0; j < grid.length; j++) {
+        const row = grid[j];
+        for (let i = 0; i < row.length; i++) {
+          const ch = row[i];
+          if (ch === '.' || ch === ' ') continue;
+          g.fillStyle = map[ch] || COLORS.power;
+          g.fillRect(r(x+i), r(y+j), 1, 1);
+        }
+      }
+    }
+    function spriteSize(grid){ return { w: grid[0].length, h: grid.length }; }
+
+    // --- Nota musical (colcheia) ---
+    const SPR_NOTE = [
+      "....XX......",
+      "....XX......",
+      "....XX......",
+      "....XX..XXX.",
+      "....XXXXXXX.",
+      "....XX....X.",
+      "....XX....X.",
+      "..XXXX....X.",
+      ".XX..X....X.",
+      "XX...X....X.",
+      "X....X....X.",
+      "X....X....X."
+    ];
+    const NOTE_SIZE = spriteSize(SPR_NOTE);
+
+    // --- Cometa (somente cabeça) com 4 frames (rotação estilo Atari) ---
+    const SPR_COMET_FRAMES = [
+      [ // 0
+        "...X...",
+        "..XXX..",
+        ".XXXXX.",
+        "XXXXXXX",
+        ".XXXXX.",
+        "..XXX..",
+        "...X..."
+      ],
+      [ // 1
+        "..XXX..",
+        ".XXXXX.",
+        ".XXXXX.",
+        "XXXXXXX",
+        ".XXXXX.",
+        ".XXXXX.",
+        "..XXX.."
+      ],
+      [ // 2
+        ".XXXXX.",
+        ".XXXXX.",
+        ".XXXXX.",
+        ".XXXXX.",
+        ".XXXXX.",
+        ".XXXXX.",
+        ".XXXXX."
+      ],
+      [ // 3
+        "..XXX..",
+        ".XXXXX.",
+        "XXXXXXX",
+        "XXXXXXX",
+        "XXXXXXX",
+        ".XXXXX.",
+        "..XXX.."
+      ]
+    ];
+    const COMET_SIZE = spriteSize(SPR_COMET_FRAMES[0]);
+
+    // --- Estado do jogo ---
+    const player = { x: 150, y: 200, width: 20, height: 20, speed: 6 };
+
+    const START_TRACK = "audio/thieves-like-us.mp3";
     const allBands = [
-      { name: "The Smiths", song: "🎵 This Charming Man (8-bit) 🎵" },
-      { name: "The Cure", song: "🎵 Boys Don't Cry (8-bit) 🎵" },
-      { name: "Legião Urbana", song: "🎵 Índios (8-bit) 🎵" },
-      { name: "Rainbow", song: "🎵 Hail to the King (8-bit) 🎵" },
-      { name: "Slayer", song: "🎵 Raining Blood (8-bit) 🎵" },
-      { name: "Metallica", song: "🎵 One (8-bit) 🎵" },
-      { name: "Joy Division", song: "🎵 Love Will Tear Us Apart (8-bit) 🎵" },
-      { name: "David Bowie", song: "🎵 Ashes to Ashes (8-bit) 🎵" },
-      { name: "Echo & the Bunnymen", song: "🎵 Bring on the Dancing Horses (8-bit) 🎵" }
+      { name: "The Smiths", song: "🎵 This Charming Man (8-bit) 🎵", audio: "audio/smiths-this-charming-man-8bit.mp3" },
+      { name: "The Cure", song: "🎵 Boys Don't Cry (8-bit) 🎵", audio: "audio/the-cure-boys-dont-cry-8bit.mp3" },
+      { name: "Legião Urbana", song: "🎵 Índios (8-bit) 🎵", audio: "audio/legiao-urbanas-indios-8bit.mp3" },
+      { name: "Rainbow", song: "🎵 Hail to the King (8-bit) 🎵", audio: "audio/rainbow-hail-to-the-king-8bit.mp3" },
+      { name: "Slayer", song: "🎵 Raining Blood (8-bit) 🎵", audio: "audio/slayer-raining-blood-8bit.mp3" },
+      { name: "Metallica", song: "🎵 One (8-bit) 🎵", audio: "audio/metallica-one-8bit.mp3" },
+      { name: "Joy Division", song: "🎵 Love Will Tear Us Apart (8-bit) 🎵", audio: "audio/joy-division-love-will-tear-us-apart-8bit.mp3" },
+      { name: "David Bowie", song: "🎵 Ashes to Ashes (8-bit) 🎵", audio: "audio/david-bowie-ashes-to-ashes-8bit.mp3" },
+      { name: "Echo & the Bunnymen", song: "🎵 Bring on the Dancing Horses (8-bit) 🎵", audio: "audio/echo-bunnymen-bring-on-the-dancing-horses-8bit.mp3" }
     ];
 
-    let bandQueue = [];
-    let activeBand = null;
-    let collected = false;
-    let showIntro = true;
-    let gameOver = false;
-    let score = 0;
+    const music = new Audio(); music.volume = 0.6; music.loop = true;
+    function playTrack(src){ if(!src) return; try{ music.pause(); music.src=src; music.currentTime=0; music.play().catch(()=>{});}catch(e){} }
 
-    let moveInterval = null;
-    const movingObstacles = [];
+    let bandQueue=[], activeBand=null, collected=false, showIntro=true, gameOver=false, score=0;
+    let bandTimeoutId = null;
+    const movingObstacles=[];
 
-    function setupObstacles() {
+    let lastTime=0, elapsed=0, difficulty=1, timeSec=0;
+    const TIME_GROWTH=0.04, SCORE_GROWTH=0.15, DIFF_MAX=4;
+    function currentDifficulty(){ return Math.min(DIFF_MAX, 1 + elapsed*TIME_GROWTH + score*SCORE_GROWTH); }
+
+    // --- UI simples ---
+    function drawWalls(){
+      g.fillStyle = COLORS.wall;
+      g.fillRect(0, 0, WALL_W, VH);
+      g.fillRect(VW - WALL_W, 0, WALL_W, VH);
+    }
+
+    function drawPlayer(){
+      g.fillStyle = COLORS.ship;
+      g.beginPath();
+      g.moveTo(r(player.x + 10), r(player.y));
+      g.lineTo(r(player.x),      r(player.y + 20));
+      g.lineTo(r(player.x + 20), r(player.y + 20));
+      g.closePath();
+      g.fill();
+    }
+
+    function drawBandSprite(b){
+      drawSprite(r(b.x), r(b.y), SPR_NOTE, { 'X': COLORS.note });
+    }
+
+    // --- Colisão círculo x retângulo ---
+    function circleRectCollision(cx, cy, cr, rx, ry, rw, rh){
+      const closestX = Math.max(rx, Math.min(cx, rx + rw));
+      const closestY = Math.max(ry, Math.min(cy, ry + rh));
+      const dx = cx - closestX;
+      const dy = cy - closestY;
+      return (dx*dx + dy*dy) <= cr*cr;
+    }
+
+    // --- Obstáculos (cometas girando) ---
+    const HITBOX_SCALE = 0.9; // ajuste fino do raio (1 = encosta no sprite)
+    function makeComet(){
+      const o = {
+        x: Math.random() * (VW - WALL_W*2 - COMET_SIZE.w) + WALL_W,
+        y: Math.random() * -400 - COMET_SIZE.h,
+        width: COMET_SIZE.w,
+        height: COMET_SIZE.h,
+        speed: 1 + Math.random() * 1.5,
+        dx: (Math.random() * 2 - 1) * 0.50,
+        spinSpeed: 6 + Math.random() * 8,
+        frameOffset: (Math.random() * 4) | 0,
+        flickerSpeed: 6 + Math.random() * 6
+      };
+      // raio baseado no menor lado do sprite, com margem
+      o.r = Math.min(o.width, o.height) * 0.5 * HITBOX_SCALE;
+      return o;
+    }
+
+    function setupObstacles(){
       movingObstacles.length = 0;
-      for (let i = 0; i < 6; i++) {
-        movingObstacles.push({
-          x: Math.random() * 260 + 20,
-          y: Math.random() * -400,
-          width: 20,
-          height: 20,
-          speed: 1 + Math.random() * 1.5
-        });
-      }
+      const count = 6;
+      for (let i = 0; i < count; i++) movingObstacles.push(makeComet());
     }
 
-    function shuffleBands() {
-      const shuffled = [...allBands];
-      for (let i = shuffled.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-      }
-      bandQueue = shuffled.map(b => ({ ...b, x: Math.random() * 200 + 40, y: -50 }));
-    }
+    function drawObstacles(dt, baseDiff){
+      const diff = baseDiff;
+      movingObstacles.forEach(o=>{
+        // movimento
+        o.y += o.speed * 60 * dt * diff;
+        o.x += o.dx * 60 * dt;
 
-    function startGame() {
-      showIntro = false;
-      gameOver = false;
-      score = 0;
-      player.x = 150;
-      scoreDisplay.textContent = "Pontos: 0";
-      restartBtn.style.display = "none";
-      shuffleBands();
-      setupObstacles();
-      spawnNextBand();
-      updateGame();
-    }
+        // limites laterais
+        const minX = WALL_W, maxX = VW - WALL_W - o.width;
+        if (o.x < minX){ o.x = minX; o.dx *= -1; }
+        if (o.x > maxX){ o.x = maxX; o.dx *= -1; }
 
-    function restartGame() {
-      startGame();
-    }
-
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && showIntro) startGame();
-      if (!showIntro) {
-        if (e.key === "ArrowLeft") player.x -= player.speed;
-        if (e.key === "ArrowRight") player.x += player.speed;
-      }
-    });
-
-    document.body.addEventListener("click", () => {
-      if (showIntro) startGame();
-    });
-
-    document.body.addEventListener("touchstart", () => {
-      if (showIntro) startGame();
-    });
-
-    // Botões com movimento contínuo
-    function holdMove(direction) {
-      if (moveInterval) clearInterval(moveInterval);
-      moveInterval = setInterval(() => {
-        if (!showIntro && !gameOver) {
-          player.x += direction * player.speed;
+        // recicla quando sai da tela
+        if (o.y > VH){
+          const n = makeComet();
+          o.x = n.x; o.y = n.y; o.speed = n.speed; o.dx = n.dx;
+          o.spinSpeed = n.spinSpeed; o.frameOffset = n.frameOffset;
+          o.flickerSpeed = n.flickerSpeed; o.r = n.r;
         }
-      }, 30);
-    }
 
-    function stopMove() {
-      if (moveInterval) clearInterval(moveInterval);
-    }
+        // animação de rotação (4 frames)
+        const frameIdx = ((o.frameOffset + Math.floor(timeSec * o.spinSpeed)) % 4) | 0;
 
-    const leftBtn = document.getElementById("leftBtn");
-    const rightBtn = document.getElementById("rightBtn");
+        // flicker sutil
+        const alpha = 0.85 + 0.15 * Math.sin(timeSec * o.flickerSpeed);
+        g.globalAlpha = alpha;
 
-    leftBtn.addEventListener("mousedown", () => holdMove(-1));
-    rightBtn.addEventListener("mousedown", () => holdMove(1));
-    leftBtn.addEventListener("mouseup", stopMove);
-    rightBtn.addEventListener("mouseup", stopMove);
-    leftBtn.addEventListener("touchstart", () => holdMove(-1));
-    rightBtn.addEventListener("touchstart", () => holdMove(1));
-    leftBtn.addEventListener("touchend", stopMove);
-    rightBtn.addEventListener("touchend", stopMove);
+        drawSprite(
+          r(o.x), r(o.y),
+          SPR_COMET_FRAMES[frameIdx],
+          { 'X': (alpha > 0.9 ? COLORS.cometBright : COLORS.cometDim) }
+        );
 
-    function drawPlayer() {
-      ctx.fillStyle = "lime";
-      ctx.beginPath();
-      ctx.moveTo(player.x + 10, player.y);
-      ctx.lineTo(player.x, player.y + 20);
-      ctx.lineTo(player.x + 20, player.y + 20);
-      ctx.closePath();
-      ctx.fill();
-    }
+        g.globalAlpha = 1;
 
-    function drawBandIcon(band) {
-      ctx.fillStyle = "cyan";
-      ctx.font = "16px monospace";
-      ctx.fillText("🎵", band.x, band.y);
-    }
-
-    function drawObstacles() {
-      ctx.fillStyle = "red";
-      movingObstacles.forEach(o => {
-        o.y += o.speed;
-        if (o.y > canvas.height) {
-          o.y = Math.random() * -200;
-          o.x = Math.random() * 280;
-        }
-        ctx.fillRect(o.x, o.y, o.width, o.height);
+        // (debug opcional) desenhar círculo da hitbox:
+        // g.strokeStyle = 'magenta'; g.beginPath(); g.arc(o.x + o.width/2, o.y + o.height/2, o.r, 0, Math.PI*2); g.stroke();
       });
     }
 
-    function spawnNextBand() {
-      if (bandQueue.length === 0) shuffleBands();
+    // --- Bandas ---
+    function shuffleBands(){
+      const shuffled=[...allBands];
+      for(let i=shuffled.length-1;i>0;i--){
+        const j=Math.floor(Math.random()*(i+1));
+        [shuffled[i],shuffled[j]]=[shuffled[j],shuffled[i]];
+      }
+      bandQueue=shuffled.map(b=>({
+        ...b,
+        x: Math.random()*(VW - WALL_W*2 - NOTE_SIZE.w) + WALL_W,
+        y: -50
+      }));
+    }
+
+    function spawnNextBand(){
+      if (bandQueue.length===0) shuffleBands();
       activeBand = bandQueue.shift();
       activeBand.y = -50;
       collected = false;
     }
 
-    function showIntroScreen() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = "lime";
-      ctx.font = "12px monospace";
-      ctx.fillText("🕹️ Rock dos Anos 80 🕹️", 70, 100);
-      ctx.fillText("Coletando clássicos com meu pai!", 40, 120);
-      ctx.fillText("Toque ou pressione ENTER para começar", 20, 150);
+    // --- Telas ---
+    function showIntroScreen(){
+      clearVirtual();
+      drawWalls();
+      g.fillStyle = "lime";
+      g.font = "12px monospace";
+      g.fillText("🕹️ Rock dos Anos 80 🕹️", 70, 100);
+      g.fillText("Coletando clássicos com meu pai!", 40, 120);
+      g.fillText("Toque ou pressione ENTER para começar", 20, 150);
+      drawBlit();
     }
 
-    function updateGame() {
-      if (showIntro) {
-        showIntroScreen();
-        return;
+    // --- Loop ---
+    function updateGame(now=0){
+      if (showIntro){ showIntroScreen(); return; }
+
+      if (!lastTime) lastTime = now;
+      const dt = Math.min((now - lastTime)/1000, 0.033);
+      lastTime = now;
+      timeSec += dt;
+
+      elapsed += dt;
+      difficulty = currentDifficulty();
+
+      clearVirtual();
+      drawWalls();
+      drawPlayer();
+      drawObstacles(dt, difficulty);
+
+      // colisão jogador (retângulo) x cometa (círculo)
+      for (let obs of movingObstacles){
+        const cx = obs.x + obs.width/2;
+        const cy = obs.y + obs.height/2;
+        if (circleRectCollision(cx, cy, obs.r, player.x, player.y, player.width, player.height)){
+          g.fillStyle = COLORS.red;
+          g.font = "12px monospace";
+          g.fillText("💥 Bateu! Tente novamente!", 60, 120);
+          gameOver = true;
+          restartBtn.style.display = "inline-block";
+          music.pause();
+          if (bandTimeoutId) { clearTimeout(bandTimeoutId); bandTimeoutId = null; }
+          drawBlit();
+          return;
+        }
       }
 
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      drawPlayer();
-      drawObstacles();
+      // queda da nota
+      const bandFall = 60 * dt * difficulty * 0.8;
+      if (activeBand && !collected){
+        activeBand.y += bandFall;
 
-      if (activeBand && !collected) {
-        activeBand.y += 1;
-        drawBandIcon(activeBand);
+        drawBandSprite(activeBand);
 
-        for (let obs of movingObstacles) {
-          if (
-            player.x < obs.x + obs.width &&
-            player.x + player.width > obs.x &&
-            player.y < obs.y + obs.height &&
-            player.y + player.height > obs.y
-          ) {
-            ctx.fillStyle = "red";
-            ctx.fillText("💥 Bateu! Tente novamente!", 60, 120);
-            gameOver = true;
-            restartBtn.style.display = "inline-block";
-            return;
-          }
-        }
-
+        // coleta (mesmo esquema de antes, AABB "generoso")
         if (
-          activeBand.y + 10 >= player.y &&
+          activeBand.y + NOTE_SIZE.h >= player.y &&
           activeBand.y <= player.y + player.height &&
-          activeBand.x >= player.x - 20 &&
-          activeBand.x <= player.x + player.width + 20
-        ) {
+          activeBand.x >= player.x - 16 &&
+          activeBand.x <= player.x + player.width + 16
+        ){
           collected = true;
           score += 1;
           scoreDisplay.textContent = "Pontos: " + score;
 
-          ctx.fillStyle = "yellow";
-          ctx.fillText(`🎧 ${activeBand.song}`, 30, 130);
+          g.fillStyle = "yellow";
+          g.font = "12px monospace";
+          g.fillText(`🎧 ${activeBand.song}`, 30, 130);
 
-          setTimeout(() => {
-            spawnNextBand();
-          }, 10000);
+          if (activeBand.audio) playTrack(activeBand.audio);
+
+          if (bandTimeoutId) { clearTimeout(bandTimeoutId); }
+          bandTimeoutId = setTimeout(() => { spawnNextBand(); bandTimeoutId = null; }, 10000);
+        }
+
+        // se perdeu a nota (passou da tela), próxima rapidamente
+        if (!collected && activeBand.y > VH + 16) {
+          collected = true;
+          if (bandTimeoutId) { clearTimeout(bandTimeoutId); }
+          bandTimeoutId = setTimeout(() => { spawnNextBand(); bandTimeoutId = null; }, 800);
         }
       }
 
-      if (!gameOver) {
-        requestAnimationFrame(updateGame);
-      }
+      drawBlit();
+      if (!gameOver) requestAnimationFrame(updateGame);
     }
 
-    ctx.font = "12px monospace";
+    // --- Controles ---
+    document.addEventListener("keydown", (e)=>{
+      if (e.key === "Enter" && showIntro) { e.preventDefault(); startGame(); return; }
+      if (!showIntro){
+        if (e.key === "ArrowLeft")  { e.preventDefault(); player.x -= player.speed; }
+        if (e.key === "ArrowRight") { e.preventDefault(); player.x += player.speed; }
+        player.x = Math.max(minPlayerX(), Math.min(player.x, maxPlayerX()));
+      }
+    }, { passive:false });
+
+    document.body.addEventListener("click", ()=>{ if (showIntro) startGame(); });
+    document.body.addEventListener("touchstart", (e)=>{ if (showIntro){ e.preventDefault(); startGame(); } }, { passive:false });
+
+    // --- Fluxo ---
+    function startGame(){
+      showIntro = false;
+      gameOver = false;
+      score = 0;
+      player.x = Math.min(maxPlayerX(), Math.max(minPlayerX(), (VW - player.width)/2));
+      scoreDisplay.textContent = "Pontos: 0";
+      restartBtn.style.display = "none";
+
+      lastTime = 0; elapsed = 0; timeSec = 0; difficulty = 1;
+
+      if (bandTimeoutId) { clearTimeout(bandTimeoutId); bandTimeoutId = null; }
+
+      shuffleBands();
+      setupObstacles();
+      spawnNextBand();
+
+      playTrack(START_TRACK);
+      requestAnimationFrame(updateGame);
+    }
+    function restartGame(){ startGame(); }
+
+    // Init
+    resizeCanvas();
+    g.font = "12px monospace";
     showIntroScreen();
   </script>
 </body>
